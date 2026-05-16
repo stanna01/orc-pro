@@ -1,7 +1,8 @@
 """Tests for checklist OCR extraction and parsing."""
 
-from backend.app.ocr.pipeline import extract_page1_fields, extract_activity_entries
-from backend.app.services.checklist_extraction import build_checklist_payload
+from backend.app.ml.ocr.pipeline import extract_page1_fields, extract_activity_entries, extract_checklist_ocr
+from backend.app.services.checklist_extraction import build_checklist_payload, validate_ocr_output
+from backend.app.models.schemas import OCRField, OCRHeader, OCRActivityRow, OCROutput
 
 
 def test_extract_page1_fields():
@@ -55,8 +56,56 @@ def test_build_checklist_payload():
         "Activity Code From Time To Time Workplace Ore/Waste Loads Remarks\n"
         "101 18:00 19:30 Pit A Ore 3 Normal\n"
     )
-    payload = build_checklist_payload(raw_text)
+    ocr_data = extract_checklist_ocr(raw_text, "test_doc_001")
+    payload = build_checklist_payload(ocr_data)
     assert payload.shift == "night"
     assert payload.machine_number == "LOAD-001"
     assert payload.activity_entries[0].activity_code_raw == "101"
     assert payload.activity_entries[0].from_time_raw == "18:00"
+
+
+def test_validate_ocr_output_valid():
+    ocr_data = OCROutput(
+        document_id="test_doc_001",
+        header=OCRHeader(
+            machine_id=OCRField(value="LOAD-001", confidence=0.9),
+            operator_name=OCRField(value="Juan Perez", confidence=0.85),
+            date=OCRField(value="2026-04-04", confidence=0.95),
+            shift=OCRField(value="night", confidence=0.8),
+            engine_hours_start=OCRField(value="1200.5", confidence=0.9),
+            engine_hours_end=OCRField(value="1212.3", confidence=0.9)
+        ),
+        activities=[
+            OCRActivityRow(
+                row_index=0,
+                activity_code=OCRField(value="101", confidence=0.8),
+                from_time=OCRField(value="18:00", confidence=0.75),
+                to_time=OCRField(value="19:30", confidence=0.75),
+                location=OCRField(value="Pit A", confidence=0.7),
+                loads=OCRField(value="3", confidence=0.8),
+                remarks=OCRField(value="Normal", confidence=0.6)
+            )
+        ]
+    )
+    # Should not raise exception
+    validate_ocr_output(ocr_data)
+
+
+def test_validate_ocr_output_invalid_shift():
+    ocr_data = OCROutput(
+        document_id="test_doc_001",
+        header=OCRHeader(
+            machine_id=OCRField(value="LOAD-001", confidence=0.9),
+            operator_name=OCRField(value="Juan Perez", confidence=0.85),
+            date=OCRField(value="2026-04-04", confidence=0.95),
+            shift=OCRField(value="morning", confidence=0.8),  # Invalid shift
+            engine_hours_start=OCRField(value="1200.5", confidence=0.9),
+            engine_hours_end=OCRField(value="1212.3", confidence=0.9)
+        ),
+        activities=[]
+    )
+    try:
+        validate_ocr_output(ocr_data)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "Invalid shift value" in str(e)

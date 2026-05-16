@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, date, time, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from backend.app.ocr.pipeline import is_breakdown
+from backend.app.ml.ocr.pipeline import is_breakdown
 
 
 @dataclass

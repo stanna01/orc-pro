@@ -14,7 +14,7 @@ from typing import AsyncGenerator
 
 from backend.app.config import get_settings
 from backend.app.database import init_db
-from backend.app.routes import health, checklist
+from backend.app.api.routes import health, checklist, checklists, uploads, ocr_processing
 
 # Configure logging
 logging.basicConfig(
@@ -78,6 +78,9 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(health.router, tags=["health"])
     app.include_router(checklist.router, tags=["checklists"])
+    app.include_router(checklists.router, tags=["checklists"])
+    app.include_router(uploads.router, tags=["uploads"])
+    app.include_router(ocr_processing.router, tags=["ocr"])
 
     # Global exception handler
     @app.exception_handler(Exception)

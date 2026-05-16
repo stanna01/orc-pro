@@ -1,6 +1,7 @@
 """Tests for timeline inference and analytics."""
 
-from backend.app.services.timeline import infer_times_for_entries, check_for_breakdown_conditions
+from backend.app.services.rule_engine import infer_to_times
+from backend.app.ml.ocr.pipeline import is_breakdown
 
 
 def test_infer_times_for_entries_missing_to_time():
@@ -9,7 +10,7 @@ def test_infer_times_for_entries_missing_to_time():
         {"from_time_raw": "19:30", "to_time_raw": "20:15", "duration_minutes": 45},
     ]
 
-    processed = infer_times_for_entries(entries)
+    processed = infer_to_times(entries)
     assert processed[0]["to_time_raw"] == "19:30"
     assert processed[0]["duration_minutes"] == 90
     assert processed[1]["from_time_raw"] == "19:30"
@@ -21,5 +22,5 @@ def test_check_for_breakdown_conditions():
         {"activity_code_raw": "101", "remarks_raw": "Normal"},
     ]
 
-    alerts = check_for_breakdown_conditions(entries)
-    assert any("breakdown" in alert.lower() for alert in alerts)
+    alerts = [is_breakdown(entry.get("activity_code_raw"), entry.get("remarks_raw")) for entry in entries]
+    assert any(alert for alert in alerts)
