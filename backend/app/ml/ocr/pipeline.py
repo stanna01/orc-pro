@@ -1,6 +1,40 @@
 """OCR and table extraction for handwritten mining checklists."""
+from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from typing import Any
+
+from backend.app.ml.preprocessing import preprocess_checklist_image, ImageRegion
+from backend.app.services.ocr_extractor import TrOCRExtractor
+from backend.app.ml.postprocessing import (
+    normalize_time_format as normalize_time_field,
+    normalize_characters as normalize_text_field,
+    validate_activity_code as _validate_activity_code,
+)
+
+
+@dataclass
+class _RegionResult:
+    text: str
+    confidence: float
+
+
+def normalize_numeric_field(text: str) -> Any:
+    """Normalize numeric-like fields (engine hours, loads, codes)."""
+    if not text:
+        return None
+    valid, normalized = _validate_activity_code(text)
+    if valid:
+        return normalized
+    # fallback: strip non-digits
+    digits = re.sub(r"[^0-9.]", "", text)
+    try:
+        if "." in digits:
+            return float(digits)
+        return int(digits)
+    except Exception:
+        return digits or None
 import time
 from datetime import datetime
 from pathlib import Path
@@ -10,16 +44,16 @@ from backend.app.ml.postprocessing import postprocess_ocr_output
 
 
 PAGE1_FIELD_PATTERNS = {
-    "machine_number": r"machine\s*number\s*[:\-]?\s*(?P<value>[^\n\r]+?)(?=\s*(operator|mine\s*number|permit|date|shift)\b|$)",
-    "operator_name": r"operator\s*name\s*[:\-]?\s*(?P<value>[^\n\r]+?)(?=\s*(machine\s*number|mine\s*number|permit|date|shift)\b|$)",
-    "mine_number": r"mine\s*number\s*[:\-]?\s*(?P<value>[^\n\r]+?)(?=\s*(machine\s*number|operator|permit|date|shift)\b|$)",
-    "permit_number": r"permit\s*number\s*[:\-]?\s*(?P<value>[^\n\r]+?)(?=\s*(machine\s*number|operator|mine\s*number|date|shift)\b|$)",
-    "date": r"date\s*[:\-]?\s*(?P<value>[^\n\r]+?)(?=\s*(machine\s*number|operator|mine\s*number|permit|shift)\b|$)",
-    "shift": r"shift\s*[:\-]?\s*(?P<value>[^\n\r]+?)(?=\s*(machine\s*number|operator|mine\s*number|permit|date)\b|$)",
-    "start_engine_hours": r"start\s*engine\s*hours\s*[:\-]?\s*(?P<value>[^\n\r]+?)(?=\s*(end\s*engine\s*hours|start\s*transmission\s*hours|end\s*transmission\s*hours)\b|$)",
-    "end_engine_hours": r"end\s*engine\s*hours\s*[:\-]?\s*(?P<value>[^\n\r]+?)(?=\s*(start\s*transmission\s*hours|end\s*transmission\s*hours)\b|$)",
-    "start_transmission_hours": r"start\s*transmission\s*hours\s*[:\-]?\s*(?P<value>[^\n\r]+?)(?=\s*(end\s*transmission\s*hours)\b|$)",
-    "end_transmission_hours": r"end\s*transmission\s*hours\s*[:\-]?\s*(?P<value>[^\n\r]+?)(?=\s*$)",
+    "machine_number": r"machine\s*number\s*[:\-]?\s*(?P<value>[^\n\r]+)",
+    "operator_name": r"operator\s*name\s*[:\-]?\s*(?P<value>[^\n\r]+)",
+    "mine_number": r"mine\s*number\s*[:\-]?\s*(?P<value>[^\n\r]+)",
+    "permit_number": r"permit\s*number\s*[:\-]?\s*(?P<value>[^\n\r]+)",
+    "date": r"date\s*[:\-]?\s*(?P<value>[^\n\r]+)",
+    "shift": r"shift\s*[:\-]?\s*(?P<value>[^\n\r]+)",
+    "start_engine_hours": r"start\s*engine\s*hours\s*[:\-]?\s*(?P<value>[^\n\r]+)",
+    "end_engine_hours": r"end\s*engine\s*hours\s*[:\-]?\s*(?P<value>[^\n\r]+)",
+    "start_transmission_hours": r"start\s*transmission\s*hours\s*[:\-]?\s*(?P<value>[^\n\r]+)",
+    "end_transmission_hours": r"end\s*transmission\s*hours\s*[:\-]?\s*(?P<value>[^\n\r]+)",
 }
 
 EXPECTED_ACTIVITY_COLUMNS = [
@@ -81,24 +115,33 @@ def split_activity_rows(raw_text: str) -> List[str]:
 
 
 def parse_activity_row(line: str) -> Dict[str, Optional[str]]:
-    line = re.sub(r"\s{2,}", "\t", line)
-    parts = [part.strip() for part in re.split(r"\t|\s{2,}", line) if part.strip()]
+    parts = [part.strip() for part in re.split(r"\s+", line.strip()) if part.strip()]
 
     if len(parts) >= len(EXPECTED_ACTIVITY_COLUMNS):
-        values = parts[: len(EXPECTED_ACTIVITY_COLUMNS) - 1]
-        remarks = " ".join(parts[len(EXPECTED_ACTIVITY_COLUMNS) - 1 :])
-        values.append(remarks)
+        activity_code = parts[0]
+        from_time = parts[1] if len(parts) > 1 else None
+        to_time = parts[2] if len(parts) > 2 else None
+        loads = parts[-2] if len(parts) >= 2 else None
+        ore_waste = parts[-3] if len(parts) >= 3 else None
+        workplace = " ".join(parts[3:-3]) if len(parts) > 6 else (parts[3] if len(parts) > 3 else None)
+        remarks = " ".join(parts[6:]) if len(parts) > 6 else None
     else:
-        values = parts + [None] * (len(EXPECTED_ACTIVITY_COLUMNS) - len(parts))
+        activity_code = parts[0] if len(parts) > 0 else None
+        from_time = parts[1] if len(parts) > 1 else None
+        to_time = parts[2] if len(parts) > 2 else None
+        workplace = parts[3] if len(parts) > 3 else None
+        ore_waste = parts[4] if len(parts) > 4 else None
+        loads = parts[5] if len(parts) > 5 else None
+        remarks = parts[6] if len(parts) > 6 else None
 
     row = {
-        "activity_code_raw": values[0] if values[0] else None,
-        "from_time_raw": values[1] if len(values) > 1 else None,
-        "to_time_raw": values[2] if len(values) > 2 else None,
-        "workplace_raw": values[3] if len(values) > 3 else None,
-        "ore_waste_raw": values[4] if len(values) > 4 else None,
-        "loads_raw": values[5] if len(values) > 5 else None,
-        "remarks_raw": values[6] if len(values) > 6 else None,
+        "activity_code_raw": activity_code,
+        "from_time_raw": from_time,
+        "to_time_raw": to_time,
+        "workplace_raw": workplace,
+        "ore_waste_raw": ore_waste,
+        "loads_raw": loads,
+        "remarks_raw": remarks,
     }
     return {k: normalize_text(v) if v else None for k, v in row.items()}
 
@@ -150,7 +193,7 @@ def extract_checklist_ocr(raw_text: str, document_id: str) -> OCROutput:
         machine_id=OCRField(value=page1.get("machine_number"), confidence=0.9),
         operator_name=OCRField(value=page1.get("operator_name"), confidence=0.85),
         date=OCRField(value=page1.get("date"), confidence=0.95),
-        shift=OCRField(value=page1.get("shift") or guess_shift(raw_text) or "day", confidence=0.8),
+        shift=OCRField(value=(page1.get("shift") or guess_shift(raw_text) or "day").lower(), confidence=0.8),
         engine_hours_start=OCRField(value=page1.get("start_engine_hours"), confidence=0.9),
         engine_hours_end=OCRField(value=page1.get("end_engine_hours"), confidence=0.9)
     )
@@ -217,11 +260,18 @@ def extract_from_image(image_path: Union[str, Path], document_id: str) -> OCROut
     if not regions:
         raise ValueError(f"No table structure detected in image: {image_path}")
 
-    # Initialize TrOCR extractor
+    # Initialize TrOCR extractor and process each segmented region
     extractor = TrOCRExtractor()
-
-    # Process regions with TrOCR
-    region_results = extractor.process_regions(regions)
+    region_results: Dict[Any, _RegionResult] = {}
+    for region in regions:
+        try:
+            out = extractor.extract_text(region.image)
+            txt = out.get("text", "")
+            conf = out.get("confidence") if isinstance(out.get("confidence"), (int, float)) else 0.0
+        except Exception:
+            txt = ""
+            conf = 0.0
+        region_results[(region.row_index, region.col_index)] = _RegionResult(text=txt, confidence=conf)
 
     # Organize results by row and column
     rows_by_index = {}

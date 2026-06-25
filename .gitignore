@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.vscode/
+.env
+
+# Common Python ignores
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS files
+.DS_Store
