@@ -48,6 +48,7 @@ def test_build_checklist_payload():
         "Operator Name: Juan Perez\n"
         "Mine Number: MINE-01\n"
         "Permit Number: PERMIT-123\n"
+        "Date: 2026-04-04\n"
         "Shift: Night\n"
         "Start Engine Hours: 1200.5\n"
         "End Engine Hours: 1212.3\n"

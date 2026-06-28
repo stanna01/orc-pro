@@ -23,6 +23,7 @@ from backend.app.services.ocr_rule_engine_integration import (
     integrate_ocr_with_rule_engine,
 )
 from backend.app.services.validator import validate_checklist
+from backend.app.ml.postprocessing import postprocess_ocr_output
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,11 @@ class ChecklistProcessingOrchestrator:
         self.ocr_extractor = TrOCRExtractor()
         self.parser = ChecklistParser()
         self.processing_log = []
+        if self.ocr_extractor.simulated:
+            logger.warning(
+                "TrOCR model unavailable — orchestrator is running in SIMULATED OCR mode. "
+                "OCR outputs will be synthetic and must NOT be used in production."
+            )
 
     def apply_confidence_filter(self, extracted_texts: List[Dict[str, Any]], threshold: float = CONF_LOW) -> Dict[str, Any]:
         """Apply confidence-based filtering and produce header/activity blobs.
@@ -128,6 +134,7 @@ class ChecklistProcessingOrchestrator:
         header_blob = cf.get("header_blob")
         activity_texts = cf.get("activity_texts")
         ocr_output = self.parser.parse_checklist(header_blob, activity_texts, document_id="synthetic_doc")
+        ocr_output = postprocess_ocr_output(ocr_output)
         self.log_step("PARSING", f"Parsed {len(ocr_output.activities)} activities; header confidence={ocr_output.processing_metadata.get('confidence_average')}")
 
         # Stage: Validation
@@ -247,6 +254,7 @@ class ChecklistProcessingOrchestrator:
             # Parse to OCROutput
             document_id = Path(pdf_path).stem
             ocr_output = self.parser.parse_checklist(header_blob, activity_texts, document_id)
+            ocr_output = postprocess_ocr_output(ocr_output)
             self.log_step("PARSING", f"Parsed {len(ocr_output.activities)} activities")
             
             # Stage 5: Validate parsed checklist BEFORE rule engine
@@ -321,6 +329,7 @@ class ChecklistProcessingOrchestrator:
             # Prepare response
             result = {
                 "success": True,
+                "simulated_ocr": self.ocr_extractor.simulated,
                 "document_id": document_id,
                 "pages_processed": len(pages),
                 "regions_detected": len(regions),

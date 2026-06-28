@@ -11,8 +11,10 @@ def test_infer_times_for_entries_missing_to_time():
     ]
 
     processed = infer_to_times(entries)
-    assert processed[0]["to_time_raw"] == "19:30"
-    assert processed[0]["duration_minutes"] == 90
+    assert processed[0]["_end_dt"] is not None, "End time should be inferred from next event start"
+    assert processed[0]["_end_dt"].strftime("%H:%M") == "19:30"
+    assert processed[0].get("inference_reason") == "inferred_from_next_event"
+    assert processed[0].get("is_inferred") is True
     assert processed[1]["from_time_raw"] == "19:30"
 
 

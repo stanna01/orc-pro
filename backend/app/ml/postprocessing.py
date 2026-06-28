@@ -198,26 +198,24 @@ def correct_vocabulary(text: str) -> str:
     if not text:
         return text
 
-    # Split into words and correct each
-    words = text.lower().split()
+    original_words = text.split()
     corrected_words = []
 
-    for word in words:
-        # Check for exact vocabulary matches
-        if word in VOCABULARY_REVERSE:
-            corrected_words.append(VOCABULARY_REVERSE[word])
+    for word in original_words:
+        lower_word = word.lower()
+        if lower_word in VOCABULARY_REVERSE:
+            corrected_words.append(VOCABULARY_REVERSE[lower_word])
         else:
-            # Check for partial matches (contains)
-            corrected = False
+            matched = False
             for variant, canonical in VOCABULARY_REVERSE.items():
-                if variant in word and len(variant) > 3:  # Avoid short matches
+                if variant in lower_word and len(variant) > 3:
                     corrected_words.append(canonical)
-                    corrected = True
+                    matched = True
                     break
-            if not corrected:
-                corrected_words.append(word)
+            if not matched:
+                corrected_words.append(word)  # preserve original case
 
-    return ' '.join(corrected_words).title()  # Title case for readability
+    return ' '.join(corrected_words)
 
 
 def postprocess_ocr_field(field: OCRField, field_type: str = 'text') -> OCRField:

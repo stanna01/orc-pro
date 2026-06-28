@@ -1,7 +1,8 @@
 """Checklist extraction service using OCR parsing and timeline normalization."""
 
 import re
-from typing import Dict, List
+from datetime import date
+from typing import Dict, List, Optional
 from backend.app.models.schemas import (
     ActivityEntryCreate,
     ChecklistFormCreate,
@@ -29,9 +30,10 @@ def validate_ocr_output(ocr_data: OCROutput) -> None:
         if not field.value:
             raise ValueError(f"Required header field '{field_name}' is missing or empty")
 
-    # Validate shift value
-    if ocr_data.header.shift.value not in ["day", "night"]:
-        raise ValueError(f"Invalid shift value: {ocr_data.header.shift.value}. Must be 'day' or 'night'")
+    # Validate shift value (normalize to lowercase before checking)
+    shift_val = (ocr_data.header.shift.value or "").lower().strip()
+    if shift_val not in ["day", "night"]:
+        raise ValueError(f"Invalid shift value: {ocr_data.header.shift.value!r}. Must be 'day' or 'night'")
 
     # Validate date format (basic check)
     if ocr_data.header.date.value:
@@ -85,8 +87,8 @@ def build_checklist_payload(ocr_data: OCROutput) -> ChecklistFormCreate:
 
     return ChecklistFormCreate(
         source_filename=ocr_data.document_id,
-        document_date=None,  # Will be parsed from header.date.value if needed
-        shift=header.shift.value,
+        document_date=_parse_date(header.date.value),
+        shift=(header.shift.value or "").lower().strip(),
         machine_number=header.machine_id.value,
         operator_name=header.operator_name.value,
         mine_number=None,  # Not in current OCR schema
@@ -99,6 +101,17 @@ def build_checklist_payload(ocr_data: OCROutput) -> ChecklistFormCreate:
         daily_checks=[],  # Not extracted by OCR
         activity_entries=activity_entries,
     )
+
+
+def _parse_date(value: Optional[str]) -> Optional[date]:
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y"):
+        try:
+            return date.fromisoformat(value) if fmt == "%Y-%m-%d" else __import__("datetime").datetime.strptime(value, fmt).date()
+        except (ValueError, TypeError):
+            continue
+    return None
 
 
 def _parse_optional_float(value: str | None) -> float | None:

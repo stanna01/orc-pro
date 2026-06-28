@@ -1,19 +1,50 @@
 """API routes for checklist management and retrieval."""
 
-from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_session
-from backend.app.models.checklist import (
-    ChecklistForm, CleanedActivityEvent, ChecklistAnalytics
+from backend.app.models.checklist import ChecklistAnalytics, ChecklistForm, CleanedActivityEvent
+from backend.app.models.schemas import ChecklistFormCreate, ChecklistFormResponse, OCROutput
+from backend.app.services.checklist_extraction import build_checklist_payload
+from backend.app.services.checklist_service import (
+    create_checklist_form,
+    get_checklist_form,
+    list_checklist_forms,
 )
-
 
 router = APIRouter(prefix="/api/v1/checklists", tags=["checklists"])
 
+
+# ---------------------------------------------------------------------------
+# Write endpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/", response_model=ChecklistFormResponse, status_code=status.HTTP_201_CREATED)
+def create_checklist(
+    checklist: ChecklistFormCreate,
+    db: Session = Depends(get_session),
+) -> ChecklistFormResponse:
+    """Create a new checklist form."""
+    return create_checklist_form(db=db, payload=checklist)
+
+
+@router.post("/extract", response_model=ChecklistFormCreate, status_code=status.HTTP_200_OK)
+def extract_checklist(
+    ocr_data: OCROutput = Body(..., description="OCR extraction output for the checklist document."),
+) -> ChecklistFormCreate:
+    """Parse OCR output into a structured checklist payload."""
+    try:
+        return build_checklist_payload(ocr_data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Read endpoints
+# ---------------------------------------------------------------------------
 
 @router.get("/{checklist_id}", status_code=status.HTTP_200_OK)
 async def get_checklist(
