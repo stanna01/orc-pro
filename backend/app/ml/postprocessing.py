@@ -121,7 +121,10 @@ def normalize_time_format(time_str: str) -> Optional[str]:
     # Remove spaces and common separators
     clean_time = re.sub(r'[^\w:]', '', clean_time)
 
-    # Handle AM/PM
+    # Handle AM/PM — track both markers before stripping them.
+    # Bare "12:00" (no am/pm) is treated as 24-hour notation (noon = 12:00).
+    # Only "12:00am" with an explicit am marker converts to midnight (00:00).
+    is_am = 'am' in clean_time
     is_pm = 'pm' in clean_time
     clean_time = clean_time.replace('am', '').replace('pm', '')
 
@@ -141,10 +144,10 @@ def normalize_time_format(time_str: str) -> Optional[str]:
             hour = int(match.group(1))
             minute = int(match.group(2))
 
-            # Apply PM offset
+            # Apply 12-hour clock conversion only when am/pm was present.
             if is_pm and hour != 12:
                 hour += 12
-            elif not is_pm and hour == 12:
+            elif is_am and hour == 12:
                 hour = 0
 
             # Validate ranges

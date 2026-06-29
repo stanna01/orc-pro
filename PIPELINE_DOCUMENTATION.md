@@ -60,10 +60,12 @@ PDF Upload → Preprocessing → OCR → Parsing → RuleEngine → Analytics �
 2. Preprocessing - Enhance for OCR
 3. Region Detection - Find table areas
 4. OCR Extraction - Run TrOCR on regions
-5. Text Parsing - Structure extracted text
-6. Rule Engine - Apply business logic
-7. Analytics - Compute metrics
-8. Database - Persist results
+5. Text Parsing - Structure extracted text (tolerant fuzzy parser)
+6. Postprocessing - Character correction, code validation, time normalisation
+7. Validation - Time ordering, shift boundaries, overlap detection
+8. Rule Engine - Apply business logic (classification, time inference, idle gaps)
+9. Analytics - Compute metrics
+10. Database - Persist results
 
 **Key Methods**:
 - `process_pdf(pdf_path, reference_date, persist)` - Process single PDF
@@ -139,26 +141,48 @@ Sample PDF: "April 4th Night.pdf"
 - Output: List of extracted text strings
 
 **Stage 5: Text Parsing**
-- Input: Raw OCR text (header + activities)
-- Process: Extract fields using regex patterns
-- Output: OCROutput schema (Pydantic)
+- Input: Raw OCR text (header + activity rows)
+- Process: Tolerant field extraction using `parse_time_tolerant`, `parse_code_tolerant`, Levenshtein fuzzy matching
+- Output: OCROutput schema (Pydantic) — activity code token excluded from time candidates to prevent misread (e.g., "101" cannot be parsed as from_time "01:01")
 
-**Stage 6: Rule Engine**
+**Stage 6: Postprocessing**
 - Input: OCROutput
 - Process:
-  - Shift detection (day/night)
-  - Time inference
-  - Event classification
-- Output: Timeline events + summary
+  - Character-level correction (O→0, l→1, I→1 in numeric contexts)
+  - Activity code validation and normalisation (range 100–699)
+  - Time format normalisation to HH:MM (handles OCR noise, am/pm, bare noon "12:00")
+  - Vocabulary correction for mining terms
+  - Confidence score adjustment based on corrections applied
+- Output: Corrected OCROutput
 
-**Stage 7: Analytics**
-- Input: Timeline events
-- Process: Compute metrics
-- Output: Availability, utilization, downtime ratios
+**Stage 7: Validation**
+- Input: Corrected OCROutput
+- Process:
+  - Time format check (HH:MM)
+  - Time ordering check (to_time > from_time)
+  - Chronological sequence check
+  - Overlap detection between activity rows
+  - Shift boundary check
+- Output: ValidationReport with errors and `needs_review` flag
 
-**Stage 8: Database**
+**Stage 8: Rule Engine**
+- Input: OCROutput
+- Process:
+  - Shift detection (day/night) from header or activity times
+  - Time inference for missing to_time values (next event or shift end)
+  - Event classification by scoring activity codes + remarks keywords
+  - Idle gap computation as calendar gaps within shift window
+  - Consistency enforcement (overlap resolution)
+- Output: Timeline events (dicts) + summary with event_counts, idle_gaps, shift info
+
+**Stage 9: Analytics**
+- Input: Timeline events (dicts with event_type, duration_minutes, etc.)
+- Process: Compute availability breakdown, performance ratios, engine hours metrics
+- Output: Availability, utilization, downtime ratios (all in [0.0, 1.0] for valid data)
+
+**Stage 10: Database**
 - Input: Analytics results
-- Process: Create records if checklist_form provided
+- Process: Create ChecklistForm, CleanedActivityEvent, ChecklistAnalytics records if persist=True
 - Output: Persisted IDs
 
 ## Error Handling

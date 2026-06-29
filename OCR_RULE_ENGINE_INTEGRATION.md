@@ -1,8 +1,8 @@
-# OCR Rule Engine Integration - Complete Documentation
+# OCR Rule Engine Integration
 
 ## Overview
 
-The OCR Rule Engine Integration service bridges the ML (OCR extraction) pipeline with business logic processing. It converts OCR-extracted checklist data into structured timeline events with automated inference and classification.
+The OCR Rule Engine Integration service bridges the OCR extraction pipeline with business logic processing. It converts parsed checklist data (after postprocessing and validation) into structured timeline events with automated inference and classification.
 
 ## Architecture
 
@@ -10,6 +10,10 @@ The OCR Rule Engine Integration service bridges the ML (OCR extraction) pipeline
 OCR Pipeline (TrOCR)
         ↓
 OCROutput (Pydantic schema)
+        ↓
+postprocessing.py  — character correction, code validation, time normalisation
+        ↓
+validator.py       — time ordering, shift boundaries, overlap detection
         ↓
 ocr_rule_engine_integration.py
         ↓
@@ -29,42 +33,30 @@ Automatically detects day vs. night shifts based on:
 - Activity times (if header shift is ambiguous)
 - Time windows: Day (6:00-18:00), Night (18:00-6:00)
 
-**Test Result**: Correctly identified "night" shift with times 18:00-06:00
-
 ### 2. Time Inference ✓
 Infers missing end times using:
 - Next event's start time (primary strategy)
 - Shift end time (fallback)
 - Marks events as ambiguous if inference fails
 
-**Test Result**: 2/6 events had missing end times, both successfully inferred
-
 ### 3. Daily Service Logic ✓
 - Detects service activities (activity code 300)
 - Applies rule: If service duration > 60 minutes, classify as breakdown
 - Computes machine release time from latest service end time
 
-**Test Result**: Service logic applied, breakdown detection working
-
 ### 4. Event Classification ✓
-Classifies events into types:
-- **Production**: Standard work activities
-- **Service**: Maintenance/daily checks (code 300)
-- **Breakdown**: Equipment failures or extended service
-- **Delay**: Waiting/queue/standby
-- **Safety_meeting**: Pre-shift meetings
-- **Idle**: Unexplained gaps
-
-**Test Result**: 3 production, 3 breakdown events correctly classified
+Classifies events into types using a scoring system (see Processing Rules below):
+- **production**: Standard work activities
+- **service**: Maintenance/daily checks
+- **breakdown**: Equipment failures or extended service
+- **delay**: Waiting/queue/standby
+- **safety_meeting**: Pre-shift meetings
+- **idle**: Calendar gaps within the shift window (inserted by rule engine, not a raw event type)
 
 ### 5. Idle Time Computation ✓
-Calculates idle gaps between shift boundaries and events:
-- Tracks active event periods
-- Identifies gaps
-- Returns gap start/end times and duration
-- Useful for equipment downtime analysis
-
-**Test Result**: Correctly computed 390 minutes idle time (23:30-06:00)
+Calculates idle gaps as calendar gaps within the shift window (`_compute_idle_gaps`):
+- Gaps are computed from shift_start to shift_end using `_anchor_datetime`
+- Returns gap start/end times and duration in minutes
 
 ## API Endpoints
 
@@ -270,12 +262,16 @@ Stores high-level timeline summary:
 3. Else → mark as ambiguous (unresolvable)
 
 ### Event Classification Rules
-- **Safety_meeting**: Remarks contain "safety", "briefing", "toolbox talk", etc.
-- **Breakdown**: Remarks contain "breakdown", "failure", "repair", etc. OR code starts with 3
-- **Service**: Remarks contain "service", "maintenance", "check", etc.
-- **Delay**: Remarks contain "delay", "waiting", "queue", etc.
-- **Idle**: No activity code and no remarks
-- **Production**: Everything else
+Classification uses a scoring system that combines activity code patterns and remarks keywords. Both contribute to the score; the highest-scoring event type wins.
+
+- **safety_meeting**: Code 1XX + remarks with "safety", "briefing", "toolbox", etc.
+- **breakdown**: Code 3XX (primary signal) OR remarks with "breakdown", "failure", "repair", etc.
+- **service**: Code 2XX + remarks with "service", "maintenance", "lube", "check", etc.
+- **delay**: Code 4XX/5XX/6XX — these ranges have no code patterns so rely entirely on remarks keywords ("delay", "waiting", "standby", "queue", etc.)
+- **idle**: Inserted by `_compute_idle_gaps` for calendar gaps within the shift window with no recorded activity
+- **production**: Default when no other type scores higher
+
+Note: 3XX maps to "breakdown" in the rule engine even though the parser's `activity_codes` dict labels code 300 as "Service". This is a known inconsistency.
 
 ### Daily Service Logic
 - Event type = "service" AND duration > 60 minutes → reclassify as "breakdown"
@@ -291,19 +287,12 @@ Stores high-level timeline summary:
 
 ## Testing
 
-Run the comprehensive integration test:
 ```bash
-cd "c:\Users\alinani sikani\Desktop\ORC pro"
-venv\Scripts\python.exe test_ocr_rule_engine_integration.py
+# From the project root, with venv active:
+python -m pytest backend/tests/ --ignore=backend/tests/test_checklist.py -v
 ```
 
-Test output shows:
-- ✓ OCR format conversion
-- ✓ Shift detection (night shift)
-- ✓ Time inference (2 events with inferred end times)
-- ✓ Event classification (3 production, 3 breakdown)
-- ✓ Daily service logic
-- ✓ Idle time computation (390 minutes)
+153 tests pass across all pipeline components. End-to-end tests in `test_pipeline_e2e.py` cover both day and night shifts, OCR noise, code/time ambiguity, and postprocessing→rule engine interactions without loading the TrOCR model.
 
 ## Key Components
 
@@ -323,14 +312,6 @@ Test output shows:
 - `POST /api/v1/ocr/analyze`: Analysis without persistence
 - `POST /api/v1/ocr/debug/*`: Debug endpoints for specific logic
 
-## Next Steps
-
-1. **Confidence Scoring**: Pass OCR confidence through processing to weight inferences
-2. **Machine Learning**: Train models to improve inference accuracy
-3. **Analytics Dashboard**: Visualize idle time, production rates, breakdown patterns
-4. **Alert System**: Flag suspicious patterns (excessive idle, missing times, ambiguous events)
-5. **Batch Processing**: Queue multiple checklists for parallel processing
-
 ## Error Handling
 
 - Invalid OCR input (missing required fields) → HTTPException 422
@@ -345,20 +326,4 @@ Test output shows:
 - Database persistence: 100-500ms (depends on number of events)
 - Total end-to-end: Typically < 1 second per checklist
 
-## Testing Scenarios Covered
-
-✓ Missing end times (inference from next event)
-✓ Missing activity codes (marked as idle/breakdown)
-✓ Shift detection for night shift
-✓ Idle gap computation
-✓ Event classification (production, breakdown, service)
-✓ Daily service logic applied
-✓ Safety meeting detection
-✓ Inference reason tracking
-✓ Ambiguous event flagging
-
 ---
-
-**Status**: ✓ INTEGRATION COMPLETE AND TESTED
-
-All core functionality working. Ready for production use with database persistence.

@@ -45,7 +45,7 @@ Content-Type: multipart/form-data
   "timeline_events": [
     {
       "id": 101,
-      "event_type": "PRODUCTION",
+      "event_type": "production",
       "activity_code": "10",
       "start_time": "07:30",
       "end_time": "09:15",
@@ -91,10 +91,12 @@ Content-Type: multipart/form-data
 2. Image preprocessing (CLAHE, denoise, binarize)
 3. Region detection (table location)
 4. OCR extraction (TrOCR on regions)
-5. Checklist parsing (regex field extraction)
-6. Rule engine integration (business logic)
-7. Analytics computation (availability, utilization)
-8. Database persistence
+5. Checklist parsing (tolerant field extraction, fuzzy matching)
+6. Postprocessing (character correction, code validation, time normalisation)
+7. Validation (time ordering, shift boundaries, overlap detection)
+8. Rule engine (event classification, time inference, idle gap computation)
+9. Analytics computation (availability, utilization, engine hours)
+10. Database persistence
 
 ---
 
@@ -134,7 +136,7 @@ Retrieve complete checklist metadata with optional timeline events and analytics
   "timeline_events": [
     {
       "id": 101,
-      "event_type": "PRODUCTION",
+      "event_type": "production",
       "activity_code": "10",
       "start_time": "07:30",
       "end_time": "09:15",
@@ -150,7 +152,7 @@ Retrieve complete checklist metadata with optional timeline events and analytics
     },
     {
       "id": 102,
-      "event_type": "BREAKDOWN",
+      "event_type": "breakdown",
       "activity_code": "30",
       "start_time": "09:15",
       "end_time": "10:00",
@@ -281,7 +283,7 @@ Retrieve detailed timeline events with optional filtering.
   "timeline_events": [
     {
       "id": 101,
-      "event_type": "PRODUCTION",
+      "event_type": "production",
       "activity_code": "10",
       "start_time": "07:30",
       "end_time": "09:15",
@@ -303,10 +305,10 @@ Retrieve detailed timeline events with optional filtering.
     "ambiguous_count": 1,
     "total_duration_minutes": 720,
     "event_types": {
-      "PRODUCTION": 18,
-      "BREAKDOWN": 5,
-      "IDLE": 4,
-      "SERVICE": 1
+      "production": 18,
+      "breakdown": 5,
+      "idle": 4,
+      "service": 1
     }
   }
 }
@@ -397,7 +399,7 @@ Represents a parsed activity from the checklist timeline.
 ```
 {
   "id": integer,
-  "event_type": string (PRODUCTION|BREAKDOWN|IDLE|SERVICE),
+  "event_type": string (production|breakdown|idle|service),
   "activity_code": string,
   "start_time": string (HH:MM),
   "end_time": string (HH:MM),

@@ -46,31 +46,39 @@ total_shift_minutes = 720 (constant, 12-hour shift)
 ```
 
 ### Release Time Calculation
-The release time marks when the machine is released to production after daily service.
+The release time marks when the machine is released back to production after daily service.
 
 ```
-release_time: HH:MM (extracted from last service event end time)
+release_time: HH:MM (extracted from last daily service event end time)
 
-release_delay_minutes = shift_end - release_time
+release_delay_minutes = max(0, shift_end - release_time)
+
+Night shift (midnight-crossing): release_delay_minutes = (24*60 - release_min) + shift_end_min
 
 Example (day shift):
   release_time = 09:30
   shift_end = 18:00
-  release_delay_minutes = 510 minutes (8.5 hours)
+  release_delay_minutes = max(0, 1080 - 570) = 510 minutes
 ```
+
+`release_delay_minutes` is stored as a separate informational metric.
+It is NOT deducted from `available_minutes` — see Available Minutes below.
 
 ### Available Minutes (Availability)
-Machine is available for production from release until breakdown or end of shift.
 
 ```
-available_minutes = shift_end - release_time - breakdown_minutes
+available_minutes = total_shift_minutes - breakdown_minutes
 
 Example (day shift):
-  shift_end = 18:00 (1080 min from start)
-  release_time = 09:30 (570 min from start)
+  total_shift_minutes = 720
   breakdown_minutes = 90 min
-  available_minutes = (1080 - 570) - 90 = 420 minutes
+  available_minutes = 720 - 90 = 630 minutes
 ```
+
+Note: `release_delay_minutes` is tracked separately and represents how much of the shift
+the machine was unavailable due to service. It is not subtracted from available_minutes
+because the service minutes are already captured in their own bucket and the availability
+ratio is defined as non-breakdown time over total shift.
 
 ### Production Time
 ```
