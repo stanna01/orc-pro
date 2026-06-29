@@ -5,8 +5,7 @@ from processed timeline events and engine hours.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, date, time, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -87,9 +86,7 @@ class PerformanceMetrics:
 
 
 def _compute_shift_window_minutes(shift: str) -> float:
-    """Compute total shift duration in minutes."""
-    if shift == "night":
-        return 12 * 60
+    """Compute total shift duration in minutes. Both shifts are 12 hours."""
     return 12 * 60
 
 
@@ -127,13 +124,13 @@ def _time_delta_minutes(from_time: str, to_time: str, shift: str) -> Optional[fl
     return float(delta) if delta >= 0 else None
 
 
-def _normalize_event_times(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _normalize_event_times(events: List[Dict[str, Any]], shift: str = "day") -> List[Dict[str, Any]]:
     """Normalize event times for consistency."""
     normalized = []
     for event in events:
         event_copy = event.copy()
         if not event_copy.get("duration_minutes") and event.get("start_time") and event.get("end_time"):
-            duration = _time_delta_minutes(event["start_time"], event["end_time"], "night")
+            duration = _time_delta_minutes(event["start_time"], event["end_time"], shift)
             if duration is not None:
                 event_copy["duration_minutes"] = duration
         normalized.append(event_copy)
@@ -228,7 +225,7 @@ def compute_availability_breakdown(
         AvailabilityBreakdown object
     """
     total_shift_minutes = _compute_shift_window_minutes(shift)
-    normalized_events = _normalize_event_times(events)
+    normalized_events = _normalize_event_times(events, shift)
 
     production_minutes = sum(
         e.get("duration_minutes", 0) or 0
@@ -271,10 +268,9 @@ def compute_availability_breakdown(
                 release_delay_minutes = (24 * 60 - release_min) + shift_end_min
             else:
                 release_delay_minutes = shift_end_min - release_min
-            available_minutes = max(0, (available_minutes or total_shift_minutes) - breakdown_minutes)
 
-    if available_minutes is None:
-        available_minutes = total_shift_minutes - breakdown_minutes
+    # Available = scheduled shift time minus breakdown (informational; release_delay is separate)
+    available_minutes = max(0, total_shift_minutes - breakdown_minutes)
 
     return AvailabilityBreakdown(
         total_shift_minutes=total_shift_minutes,

@@ -168,15 +168,10 @@ def persist_timeline_summary(
     events: List[Dict[str, Any]],
     shift: str,
     checklist_form: Optional[ChecklistForm] = None,
+    machine_analytics: Optional[Dict[str, Any]] = None,
 ) -> ChecklistAnalytics:
     """Persist timeline summary and machine performance analytics to database.
-    
-    Computes comprehensive machine performance metrics:
-    - Availability breakdown (production, breakdown, service, safety, idle minutes)
-    - Utilization ratios (availability, utilization, downtime)
-    - Engine hours validation and deltas
-    - Release time and delay calculations
-    
+
     Args:
         db: SQLAlchemy session
         checklist_form_id: ID of parent checklist form
@@ -184,26 +179,26 @@ def persist_timeline_summary(
         events: Timeline events for analytics computation
         shift: "day" or "night"
         checklist_form: Optional checklist form for access to engine hours
-        
+        machine_analytics: Pre-computed analytics dict; recomputed if not supplied
+
     Returns:
         Persisted ChecklistAnalytics record with computed analytics
     """
-    # Extract engine hours from checklist form if available
-    start_engine_hours = checklist_form.start_engine_hours if checklist_form else None
-    end_engine_hours = checklist_form.end_engine_hours if checklist_form else None
-    start_transmission_hours = checklist_form.start_transmission_hours if checklist_form else None
-    end_transmission_hours = checklist_form.end_transmission_hours if checklist_form else None
-    
-    # Compute machine analytics (availability, utilization, downtime)
-    machine_analytics = compute_machine_analytics(
-        events=events,
-        shift=shift,
-        release_time=summary.get("machine_release_time"),
-        start_engine_hours=start_engine_hours,
-        end_engine_hours=end_engine_hours,
-        start_transmission_hours=start_transmission_hours,
-        end_transmission_hours=end_transmission_hours,
-    )
+    if machine_analytics is None:
+        # Fallback: compute from scratch (caller should prefer passing pre-computed)
+        start_engine_hours = checklist_form.start_engine_hours if checklist_form else None
+        end_engine_hours = checklist_form.end_engine_hours if checklist_form else None
+        start_transmission_hours = checklist_form.start_transmission_hours if checklist_form else None
+        end_transmission_hours = checklist_form.end_transmission_hours if checklist_form else None
+        machine_analytics = compute_machine_analytics(
+            events=events,
+            shift=shift,
+            release_time=summary.get("machine_release_time"),
+            start_engine_hours=start_engine_hours,
+            end_engine_hours=end_engine_hours,
+            start_transmission_hours=start_transmission_hours,
+            end_transmission_hours=end_transmission_hours,
+        )
     
     # Get existing analytics or create new
     analytics = db.query(ChecklistAnalytics).filter_by(
@@ -410,14 +405,13 @@ def integrate_ocr_with_rule_engine(
         )
         result["persisted_events"] = [e.id for e in persisted_events]
 
-        # Persist summary/analytics
+        # Persist summary/analytics — reuse already-computed analytics to avoid double computation
         persisted_analytics = persist_timeline_summary(
-            db, checklist_form.id, summary, events, shift, checklist_form
+            db, checklist_form.id, summary, events, shift, checklist_form,
+            machine_analytics=result.get("analytics"),
         )
         result["persisted_analytics"] = persisted_analytics.id
-
-        # Commit transaction
-        db.commit()
+        # Note: caller (orchestrator) owns the commit; do not commit here
 
     return result
 

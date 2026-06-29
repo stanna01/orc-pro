@@ -184,20 +184,31 @@ def validate_checklist(ocr_output: OCROutput) -> ValidationReport:
         shift_start, shift_end = SHIFT_WINDOWS[hdr_shift]
         for idx, start, end in intervals:
             if start and end:
-                # Normalize to same-day times for comparison
-                s_dt = start
-                e_dt = end
-                # For night shift where end < start (overnight), allow end <= start by treating end as next day
-                if hdr_shift == "night" and e_dt < s_dt:
-                    # treat as valid overnight interval; skip strict boundary check
-                    continue
-                if s_dt < shift_start or e_dt > shift_end:
-                    report.errors.append(ValidationErrorEntry(
-                        message=f"Activity in row {idx} outside shift boundaries ({hdr_shift})",
-                        severity="warning",
-                        affected_rows=[idx],
-                        meta={"start": s_dt.isoformat(), "end": e_dt.isoformat(), "shift": hdr_shift}
-                    ))
+                if hdr_shift == "night":
+                    # Night shift spans 18:00–06:00 (crosses midnight).
+                    # Three valid cases for a non-spanning activity:
+                    #   1. spans midnight (end < start on clock) — always valid
+                    #   2. both times >= 18:00 (evening block)
+                    #   3. both times <= 06:00 (early-morning block)
+                    if end < start:
+                        continue  # spans midnight, valid
+                    in_evening = start >= shift_start        # >= 18:00
+                    in_morning = end <= shift_end             # <= 06:00
+                    if not (in_evening or in_morning):
+                        report.errors.append(ValidationErrorEntry(
+                            message=f"Activity in row {idx} outside night shift boundaries",
+                            severity="warning",
+                            affected_rows=[idx],
+                            meta={"start": start.isoformat(), "end": end.isoformat(), "shift": hdr_shift}
+                        ))
+                else:
+                    if start < shift_start or end > shift_end:
+                        report.errors.append(ValidationErrorEntry(
+                            message=f"Activity in row {idx} outside shift boundaries ({hdr_shift})",
+                            severity="warning",
+                            affected_rows=[idx],
+                            meta={"start": start.isoformat(), "end": end.isoformat(), "shift": hdr_shift}
+                        ))
 
     # Finalize
     if any(e.severity == "critical" for e in report.errors):

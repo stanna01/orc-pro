@@ -8,7 +8,17 @@ computes idle gaps inside day/night shifts.
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+
+
+class EventType(str, Enum):
+    PRODUCTION = "production"
+    BREAKDOWN = "breakdown"
+    SERVICE = "service"
+    SAFETY_MEETING = "safety_meeting"
+    DELAY = "delay"
+    IDLE = "idle"
 
 FieldValue = Dict[str, Any]
 ActivityRow = Dict[str, Any]

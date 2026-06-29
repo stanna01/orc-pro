@@ -8,6 +8,7 @@ from tempfile import NamedTemporaryFile
 
 from sqlalchemy.orm import Session
 
+from backend.app.config import get_settings
 from backend.app.models.checklist import ChecklistForm
 from backend.app.models.schemas import OCROutput
 from backend.app.services.pdf_processor import (
@@ -17,7 +18,7 @@ from backend.app.services.pdf_processor import (
     extract_region,
     scale_image,
 )
-from backend.app.services.ocr_extractor import TrOCRExtractor, CONF_LOW
+from backend.app.services.ocr_extractor import initialize_ocr_extractor, CONF_LOW
 from backend.app.services.checklist_parser import ChecklistParser
 from backend.app.services.ocr_rule_engine_integration import (
     integrate_ocr_with_rule_engine,
@@ -48,7 +49,10 @@ class ChecklistProcessingOrchestrator:
             db: Optional SQLAlchemy session for database operations
         """
         self.db = db
-        self.ocr_extractor = TrOCRExtractor()
+        _settings = get_settings()
+        self.ocr_extractor = initialize_ocr_extractor(
+            fail_on_missing=(_settings.environment == "production")
+        )
         self.parser = ChecklistParser()
         self.processing_log = []
         if self.ocr_extractor.simulated:

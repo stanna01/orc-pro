@@ -100,7 +100,7 @@ class ChecklistFormResponse(BaseModel):
 class OCRField(BaseModel):
     """Base schema for OCR-extracted fields with confidence scoring."""
     value: Optional[str] = Field(default=None, description="Extracted text value")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="OCR confidence score (0.0-1.0)")
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="OCR confidence score (0.0-1.0)")
     classification: Optional[str] = Field(default=None, description="Confidence classification: high|medium|low|unreadable")
     bbox: Optional[Tuple[int, int, int, int]] = Field(default=None, description="Bounding box (x,y,w,h) if available")
     # Parsing results

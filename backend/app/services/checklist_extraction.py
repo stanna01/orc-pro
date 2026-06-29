@@ -42,7 +42,7 @@ def validate_ocr_output(ocr_data: OCROutput) -> None:
             parts = ocr_data.header.date.value.split("-")
             if len(parts) != 3 or len(parts[0]) != 4:
                 raise ValueError(f"Invalid date format: {ocr_data.header.date.value}. Expected YYYY-MM-DD")
-        except:
+        except Exception:
             raise ValueError(f"Invalid date format: {ocr_data.header.date.value}. Expected YYYY-MM-DD")
 
     # Validate activity rows
@@ -62,6 +62,28 @@ def build_checklist_payload(ocr_data: OCROutput) -> ChecklistFormCreate:
     # Convert activity rows to ActivityEntryCreate
     activity_entries = []
     for activity in ocr_data.activities:
+        # Aggregate confidence only from fields that have both a value and a
+        # numeric confidence score — min() on None crashes with TypeError.
+        has_required = all([
+            activity.activity_code.value,
+            activity.from_time.value,
+            activity.to_time.value,
+        ])
+        row_confidence = 0.0
+        if has_required:
+            scored = [
+                f.confidence for f in [
+                    activity.activity_code,
+                    activity.from_time,
+                    activity.to_time,
+                    activity.location,
+                    activity.loads,
+                    activity.remarks,
+                ]
+                if f.confidence is not None
+            ]
+            row_confidence = min(scored) if scored else 0.0
+
         activity_entries.append(ActivityEntryCreate(
             row_index=activity.row_index,
             activity_code_raw=activity.activity_code.value,
@@ -70,18 +92,7 @@ def build_checklist_payload(ocr_data: OCROutput) -> ChecklistFormCreate:
             workplace_raw=activity.location.value,
             loads_raw=activity.loads.value,
             remarks_raw=activity.remarks.value,
-            confidence=min([
-                activity.activity_code.confidence,
-                activity.from_time.confidence,
-                activity.to_time.confidence,
-                activity.location.confidence,
-                activity.loads.confidence,
-                activity.remarks.confidence
-            ]) if all([
-                activity.activity_code.value,
-                activity.from_time.value,
-                activity.to_time.value
-            ]) else 0.0,
+            confidence=row_confidence,
             raw_text=f"{activity.activity_code.value or ''} {activity.from_time.value or ''} {activity.to_time.value or ''} {activity.location.value or ''} {activity.loads.value or ''} {activity.remarks.value or ''}".strip()
         ))
 
