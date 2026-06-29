@@ -119,7 +119,7 @@ def _time_delta_minutes(from_time: str, to_time: str, shift: str) -> Optional[fl
     else:
         delta = to_min - from_min
         if delta < 0:
-            delta += 24 * 60
+            return None  # day shift cannot wrap midnight; invalid duration
 
     return float(delta) if delta >= 0 else None
 
@@ -267,7 +267,7 @@ def compute_availability_breakdown(
             if shift == "night" and shift_end_min < release_min:
                 release_delay_minutes = (24 * 60 - release_min) + shift_end_min
             else:
-                release_delay_minutes = shift_end_min - release_min
+                release_delay_minutes = max(0.0, shift_end_min - release_min)
 
     # Available = scheduled shift time minus breakdown (informational; release_delay is separate)
     available_minutes = max(0, total_shift_minutes - breakdown_minutes)

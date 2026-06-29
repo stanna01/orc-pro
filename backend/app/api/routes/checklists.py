@@ -222,7 +222,7 @@ async def get_checklist_analytics(
             "downtime_ratio": analytics.downtime_ratio,
             "effective_availability": (
                 (analytics.availability_minutes - analytics.idle_duration_minutes) / analytics.total_shift_minutes
-                if analytics.total_shift_minutes and analytics.availability_minutes else None
+                if analytics.total_shift_minutes and analytics.availability_minutes is not None and analytics.idle_duration_minutes is not None else None
             ),
         },
         "engine_metrics": {
@@ -356,13 +356,20 @@ async def list_checklists(
     
     # Get paginated results
     checklists = query.order_by(ChecklistForm.created_at.desc()).offset(offset).limit(limit).all()
-    
+
+    # Batch-load analytics to avoid N+1
+    checklist_ids = [form.id for form in checklists]
+    analytics_map = {
+        a.checklist_form_id: a
+        for a in db.query(ChecklistAnalytics).filter(
+            ChecklistAnalytics.checklist_form_id.in_(checklist_ids)
+        ).all()
+    } if checklist_ids else {}
+
     # Format results
     checklist_list = []
     for form in checklists:
-        analytics = db.query(ChecklistAnalytics).filter_by(
-            checklist_form_id=form.id
-        ).first()
+        analytics = analytics_map.get(form.id)
         
         checklist_list.append({
             "id": form.id,

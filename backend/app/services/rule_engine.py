@@ -685,28 +685,8 @@ def compute_release_time(events: List[TimelineEvent], shift: str) -> Optional[st
 
 def compute_idle_time(events: List[TimelineEvent], shift: str, reference_date: Optional[date] = None) -> float:
     """Compute idle time as gaps between events inside the shift."""
-    start_dt, end_dt = _compute_shift_window(shift, reference_date)
-    event_periods = []
-    for event in events:
-        if event.start_time and event.end_time:
-            start = parse_time(event.start_time)
-            end = parse_time(event.end_time)
-            if start and end:
-                if shift == "night" and end < start:
-                    end += timedelta(days=1)
-                event_periods.append((start, end))
-    event_periods.sort(key=lambda pair: pair[0])
-
-    idle_minutes = 0.0
-    cursor = start_dt
-    for start, end in event_periods:
-        if start > cursor:
-            idle_minutes += (start - cursor).total_seconds() / 60.0
-        if end > cursor:
-            cursor = end
-    if end_dt > cursor:
-        idle_minutes += (end_dt - cursor).total_seconds() / 60.0
-    return idle_minutes
+    gaps = _compute_idle_gaps(events, shift, reference_date)
+    return sum(g.duration_minutes for g in gaps)
 
 
 def compute_metrics(events: List[TimelineEvent], shift: str, document_date: Optional[date] = None) -> Dict[str, Optional[float]]:

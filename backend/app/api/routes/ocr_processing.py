@@ -505,7 +505,7 @@ async def get_analytics(
             "downtime_ratio": analytics.downtime_ratio,
             "effectiveness_ratio": (
                 (analytics.availability_minutes - analytics.idle_duration_minutes) / analytics.total_shift_minutes
-                if analytics.total_shift_minutes and analytics.availability_minutes else None
+                if analytics.total_shift_minutes and analytics.availability_minutes is not None and analytics.idle_duration_minutes is not None else None
             ),
         },
         "engine_metrics": {
