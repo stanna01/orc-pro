@@ -35,15 +35,13 @@ def validate_ocr_output(ocr_data: OCROutput) -> None:
     if shift_val not in ["day", "night"]:
         raise ValueError(f"Invalid shift value: {ocr_data.header.shift.value!r}. Must be 'day' or 'night'")
 
-    # Validate date format (basic check)
+    # Validate date format using the same multi-format parser used downstream
     if ocr_data.header.date.value:
-        try:
-            # Simple YYYY-MM-DD check
-            parts = ocr_data.header.date.value.split("-")
-            if len(parts) != 3 or len(parts[0]) != 4:
-                raise ValueError(f"Invalid date format: {ocr_data.header.date.value}. Expected YYYY-MM-DD")
-        except Exception:
-            raise ValueError(f"Invalid date format: {ocr_data.header.date.value}. Expected YYYY-MM-DD")
+        if _parse_date(ocr_data.header.date.value) is None:
+            raise ValueError(
+                f"Invalid date format: {ocr_data.header.date.value!r}. "
+                "Expected YYYY-MM-DD, DD/MM/YYYY, or DD-MM-YYYY"
+            )
 
     # Validate activity rows
     for activity in ocr_data.activities:

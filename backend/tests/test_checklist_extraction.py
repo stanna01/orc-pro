@@ -110,3 +110,62 @@ def test_validate_ocr_output_invalid_shift():
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "Invalid shift value" in str(e)
+
+
+# ---------------------------------------------------------------------------
+# Date format validation (bug fix: only YYYY-MM-DD was previously accepted)
+# ---------------------------------------------------------------------------
+
+def _base_header(date_value):
+    return OCRHeader(
+        machine_id=OCRField(value="LOAD-001", confidence=0.9),
+        operator_name=OCRField(value="Juan Perez", confidence=0.85),
+        date=OCRField(value=date_value, confidence=0.95),
+        shift=OCRField(value="day", confidence=0.8),
+        engine_hours_start=OCRField(value="1200.5", confidence=0.9),
+        engine_hours_end=OCRField(value="1212.3", confidence=0.9),
+    )
+
+
+def test_validate_ocr_output_date_slash_format_accepted():
+    """Bug fix: DD/MM/YYYY from real OCR was rejected by the strict YYYY-MM-DD check."""
+    ocr_data = OCROutput(
+        document_id="date_slash",
+        header=_base_header("29/06/2026"),
+        activities=[],
+    )
+    validate_ocr_output(ocr_data)  # must not raise
+
+
+def test_validate_ocr_output_date_dash_format_accepted():
+    """DD-MM-YYYY must also be accepted."""
+    ocr_data = OCROutput(
+        document_id="date_dash",
+        header=_base_header("29-06-2026"),
+        activities=[],
+    )
+    validate_ocr_output(ocr_data)  # must not raise
+
+
+def test_validate_ocr_output_iso_format_still_accepted():
+    """YYYY-MM-DD must still work after the fix."""
+    ocr_data = OCROutput(
+        document_id="date_iso",
+        header=_base_header("2026-06-29"),
+        activities=[],
+    )
+    validate_ocr_output(ocr_data)  # must not raise
+
+
+def test_validate_ocr_output_completely_invalid_date_rejected():
+    """A string that is not a valid date in any accepted format must raise."""
+    ocr_data = OCROutput(
+        document_id="date_bad",
+        header=_base_header("not-a-date"),
+        activities=[],
+    )
+    try:
+        validate_ocr_output(ocr_data)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "Invalid date format" in str(e)

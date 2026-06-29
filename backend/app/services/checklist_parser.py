@@ -192,7 +192,7 @@ class ChecklistParser:
             classification = raw_text.get("classification")
         else:
             text_blob = raw_text
-            row_conf = 0.0
+            row_conf = None  # no OCR confidence for plain-string input; don't suppress extracted values
             classification = None
 
         # Extract date
@@ -215,11 +215,12 @@ class ChecklistParser:
         engine_hours_start = engine_matches[0] if engine_matches else None
         engine_hours_end = engine_matches[1] if len(engine_matches) > 1 else None
 
+        conf_ok = row_conf is None or row_conf >= 0.7
         return OCRHeader(
-            machine_id=OCRField(value=machine_id if row_conf and row_conf >= 0.7 else None, confidence=row_conf or 0.0, classification=classification),
-            operator_name=OCRField(value=operator if row_conf and row_conf >= 0.7 else None, confidence=row_conf or 0.0, classification=classification),
-            date=OCRField(value=date_str if row_conf and row_conf >= 0.7 else None, confidence=row_conf or 0.0, classification=classification),
-            shift=OCRField(value=shift if row_conf and row_conf >= 0.7 else None, confidence=row_conf or 0.0, classification=classification),
+            machine_id=OCRField(value=machine_id if conf_ok else None, confidence=row_conf or 0.0, classification=classification),
+            operator_name=OCRField(value=operator if conf_ok else None, confidence=row_conf or 0.0, classification=classification),
+            date=OCRField(value=date_str if conf_ok else None, confidence=row_conf or 0.0, classification=classification),
+            shift=OCRField(value=shift if conf_ok else None, confidence=row_conf or 0.0, classification=classification),
             engine_hours_start=OCRField(value=engine_hours_start or None, confidence=row_conf or 0.0, classification=classification),
             engine_hours_end=OCRField(value=engine_hours_end or None, confidence=row_conf or 0.0, classification=classification),
         )
@@ -257,20 +258,22 @@ class ChecklistParser:
         code_parse_score = code_result.get('score')
 
         # Extract times
-        # Parse times with tolerant parser
-        # attempt to find tokens that look like times
+        # attempt to find tokens that look like times; exclude the token
+        # already consumed as the activity code to prevent it being
+        # misinterpreted as from_time (e.g. "101" → "01:01").
         token_candidates = re.findall(r"[0-9OIl:]{1,6}", text_blob)
+        time_candidates = [t for t in token_candidates if t != (raw_code or "")]
         from_time = None
         to_time = None
         time_scores = []
-        if token_candidates:
-            if len(token_candidates) >= 1:
-                p = parse_time_tolerant(token_candidates[0])
+        if time_candidates:
+            if len(time_candidates) >= 1:
+                p = parse_time_tolerant(time_candidates[0])
                 if p['valid']:
                     from_time = p['parsed']
                     time_scores.append(p['score'])
-            if len(token_candidates) >= 2:
-                p2 = parse_time_tolerant(token_candidates[1])
+            if len(time_candidates) >= 2:
+                p2 = parse_time_tolerant(time_candidates[1])
                 if p2['valid']:
                     to_time = p2['parsed']
                     time_scores.append(p2['score'])
@@ -337,8 +340,8 @@ class ChecklistParser:
         return OCRActivityRow(
             row_index=row_index,
             activity_code=_mk_field(raw_code, activity_code, row_conf, code_parse_score if 'code_parse_score' in locals() else 0.0, bool(activity_code)),
-            from_time=_mk_field(token_candidates[0] if token_candidates else None, from_time, row_conf, time_scores[0] if time_scores else 0.0, bool(from_time)),
-            to_time=_mk_field(token_candidates[1] if len(token_candidates) > 1 else None, to_time, row_conf, time_scores[1] if len(time_scores) > 1 else 0.0, bool(to_time)),
+            from_time=_mk_field(time_candidates[0] if time_candidates else None, from_time, row_conf, time_scores[0] if time_scores else 0.0, bool(from_time)),
+            to_time=_mk_field(time_candidates[1] if len(time_candidates) > 1 else None, to_time, row_conf, time_scores[1] if len(time_scores) > 1 else 0.0, bool(to_time)),
             location=_mk_field(None, location, row_conf, 0.8 if location else 0.0, bool(location)),
             loads=_mk_field(None, loads, row_conf, 0.9 if loads else 0.0, bool(loads)),
             remarks=_mk_field(None, remarks, row_conf, 0.6 if remarks else 0.0, bool(remarks)),

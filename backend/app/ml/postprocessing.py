@@ -178,7 +178,7 @@ def validate_activity_code(code: str) -> Tuple[bool, Optional[str]]:
     # Check if it's a valid mining activity code (3 digits, specific ranges)
     try:
         code_num = int(clean_code)
-        if 100 <= code_num <= 399:  # Valid mining activity code range
+        if 100 <= code_num <= 699:  # Valid mining activity code range (100-699: production, service, maintenance, breakdown, delay)
             return True, f"{code_num:03d}"
     except ValueError:
         pass
@@ -257,8 +257,8 @@ def postprocess_ocr_field(field: OCRField, field_type: str = 'text') -> OCRField
         if corrected != original_value:
             confidence_boost = 0.1
 
-    # Adjust confidence (don't exceed 1.0)
-    new_confidence = min(1.0, field.confidence + confidence_boost)
+    # Adjust confidence (don't exceed 1.0); confidence may be None
+    new_confidence = min(1.0, (field.confidence or 0.0) + confidence_boost)
 
     return OCRField(
         value=corrected,
@@ -322,7 +322,7 @@ def postprocess_ocr_output(ocr_output: OCROutput) -> OCROutput:
 
     valid_fields = [f for f in all_fields if f.value is not None]
     if valid_fields:
-        avg_confidence = sum(f.confidence for f in valid_fields) / len(valid_fields)
+        avg_confidence = sum(f.confidence or 0.0 for f in valid_fields) / len(valid_fields)
         updated_metadata['postprocessing_avg_confidence'] = round(avg_confidence, 3)
 
     return OCROutput(
