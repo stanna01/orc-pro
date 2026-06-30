@@ -1,7 +1,7 @@
 """API routes for OCR processing with rule engine and analytics integration."""
 
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -101,7 +101,7 @@ async def process_ocr_output(
     
     return {
         "success": True,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "data": result,
     }
 
@@ -146,7 +146,7 @@ async def analyze_ocr_output(
     
     return {
         "success": True,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "shifts": extract_timeline_shifts(timeline_result),
         "service": extract_service_info(timeline_result),
         "idle_analysis": extract_idle_analysis(timeline_result),
@@ -330,7 +330,7 @@ async def process_checklist_pdf(
         
         return {
             "success": result["success"],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "filename": file.filename,
             "document_id": result.get("document_id"),
             "pages_processed": result.get("pages_processed", 0),
@@ -609,7 +609,7 @@ async def upload_and_process_checklist(
                 
                 return {
                     "success": True,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "filename": file.filename,
                     "checklist_id": checklist_id,
                     "document_id": result.get("document_id"),

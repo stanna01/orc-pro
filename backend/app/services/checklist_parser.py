@@ -2,7 +2,7 @@
 
 import re
 from typing import Dict, List, Optional, Any
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from backend.app.models.schemas import (
     OCROutput, OCRHeader, OCRField, OCRActivityRow
@@ -159,15 +159,38 @@ class ChecklistParser:
     
     def __init__(self):
         self.activity_codes = {
+            # Operations (production)
             '101': 'Production',
             '102': 'Production',
             '103': 'Production',
-            '200': 'Service',
-            '201': 'Service',
-            '300': 'Service',
-            '400': 'Maintenance',
-            '500': 'Breakdown',
-            '600': 'Delay',
+            '104': 'Production',
+            '105': 'Production',
+            '106': 'Production',
+            # Delays & service
+            '201': 'Delay',
+            '202': 'Delay',
+            '203': 'Service',
+            '204': 'Service',
+            '205': 'Delay',
+            '206': 'Delay',
+            '207': 'Safety Meeting',
+            '208': 'Delay',
+            '209': 'Delay',
+            # Maintenance/breakdowns
+            '300': 'Breakdown',
+            '301': 'Breakdown',
+            '302': 'Breakdown',
+            '303': 'Breakdown',
+            '304': 'Breakdown',
+            '305': 'Breakdown',
+            '306': 'Breakdown',
+            '307': 'Breakdown',
+            '308': 'Breakdown',
+            '309': 'Breakdown',
+            '310': 'Breakdown',
+            '311': 'Breakdown',
+            '312': 'Breakdown',
+            '313': 'Breakdown',
         }
         self.keyword_groups = {
             'breakdown': ['breakdown', 'hydraulic', 'fault', 'stuck', 'repair', 'engine failure', 'trouble', 'not moving'],
@@ -379,7 +402,7 @@ class ChecklistParser:
             activities=activities,
             processing_metadata={
                 "parser": "ChecklistParser",
-                "parsing_timestamp": datetime.utcnow().isoformat(),
+                "parsing_timestamp": datetime.now(timezone.utc).isoformat(),
                 "activity_count": len(activities),
                 "confidence_average": float(
                     (

@@ -54,7 +54,7 @@ SAFETY_KEYWORDS = [
     r"safety talk",
 ]
 
-SAFETY_KEYWORDS += [r"evacuation", r"first aid", r"incident", r"near miss"]
+SAFETY_KEYWORDS += [r"evacuation", r"first aid", r"incident", r"near miss", r"m-com", r"mcom", r"safety m"]
 
 SERVICE_KEYWORDS = [
     r"daily service",
@@ -75,9 +75,11 @@ DELAY_KEYWORDS = [
     r"break",
 ]
 
-DELAY_KEYWORDS += [r"waiting on truck", r"waiting for service", r"blocked by", r"traffic", r"haul road"]
+DELAY_KEYWORDS += [r"waiting on truck", r"waiting for service", r"blocked by", r"traffic", r"haul road",
+                   r"no operator", r"road blockage", r"ore pass full", r"waste pass full", r"operator checklist"]
 
-MINING_OPS_KEYWORDS = [r"loading", r"dumping", r"hauling", r"shovel", r"bench", r"blast", r"blast hole", r"drill"]
+MINING_OPS_KEYWORDS = [r"loading", r"dumping", r"hauling", r"shovel", r"bench", r"blast", r"blast hole", r"drill",
+                       r"lashing", r"tipping", r"backfill", r"transit", r"ore pass", r"waste pass"]
 
 SHIFT_CHANGE_KEYWORDS = [
     r"shift change",
@@ -369,13 +371,24 @@ def _classify_event(raw_row: ActivityRow) -> Tuple[str, bool, List[str]]:
         scores["production"] += 0.5
         reasons.append("mining_ops_hint")
 
-    # Activity code patterns
+    # Activity code patterns — based on FM-EN-180/181 code scheme
     if re.match(r"^3\d{2,}$", activity_code):
+        # 3XX: all maintenance/breakdown codes (axles, engine, hydraulics, etc.)
         scores["breakdown"] += 0.6
         reasons.append("code_breakdown")
-    if re.match(r"^2\d{2,}$", activity_code):
-        scores["service"] += 0.5
+    elif activity_code == "207":
+        # 207: Safety M-Com (safety meeting/communication)
+        scores["safety_meeting"] += 0.7
+        reasons.append("code_safety_meeting")
+    elif activity_code in ("203", "204"):
+        # 203: Daily Machine Checks, 204: Fuel and Oils
+        scores["service"] += 0.6
         reasons.append("code_service")
+    elif re.match(r"^2\d{2,}$", activity_code):
+        # Remaining 2XX: 201 waiting, 202 pass full, 205 no operator,
+        # 206 other, 208 operator checklist, 209 road blockage — all delays
+        scores["delay"] += 0.6
+        reasons.append("code_delay")
 
     # Duration-based heuristics
     if duration_minutes is not None:
@@ -581,6 +594,14 @@ def process_checklist_timeline(ocr_output: OCRChecklist, reference_date: Optiona
             "shift_start": _compute_shift_window(shift, reference_date)[0].strftime("%H:%M"),
             "shift_end": _compute_shift_window(shift, reference_date)[1].strftime("%H:%M"),
             "consistency": consistency_report,
+            "event_counts": {
+                "production": sum(1 for event in events if event.event_type == "production"),
+                "delay": sum(1 for event in events if event.event_type == "delay"),
+                "breakdown": sum(1 for event in events if event.event_type == "breakdown"),
+                "service": sum(1 for event in events if event.event_type == "service"),
+                "safety_meeting": sum(1 for event in events if event.event_type == "safety_meeting"),
+                "idle": sum(1 for event in events if event.event_type == "idle"),
+            },
         }
         return {"events": [event.to_dict() for event in events], "summary": summary}
 
